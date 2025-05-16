@@ -1,12 +1,12 @@
 import datetime
 import os
 import sqlite3
-import json
-from flask import Flask, request, Response
-from flask_cors import CORS
+from fastmcp import FastMCP
 
-app = Flask(__name__)
-CORS(app)  # Enable CORS for all routes
+mcp = FastMCP(
+    name="Belongings",
+    instructions="Track items in containers across various locations. Use commands to search, add, remove, and move items between containers."
+)
 
 # Define database path
 DATA_DIR = os.path.join(os.getcwd(), "data")
@@ -32,29 +32,9 @@ def init_db():
 # Initialize the database
 init_db()
 
-# SSE event functions
-def format_sse(data, event=None):
-    msg = f"data: {json.dumps(data)}\n\n"
-    if event is not None:
-        msg = f"event: {event}\n{msg}"
-    return msg
-
-@app.route('/events')
-def events():
-    def generate():
-        yield format_sse({"message": "Connected to Belongings SSE server"})
-    
-    return Response(generate(), mimetype='text/event-stream')
-
-@app.route('/add_item', methods=['POST'])
-def add_item():
-    data = request.json
-    container_id = data.get('container_id')
-    item = data.get('item')
-    
-    if not container_id or not item:
-        return json.dumps({"error": "Missing container_id or item"}), 400
-    
+@mcp.tool
+def add_item(container_id: str, item: str):
+    """Add an item to a container. If the container doesn't exist, create it."""
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     
@@ -74,17 +54,11 @@ def add_item():
     
     conn.commit()
     conn.close()
-    return json.dumps({"message": f"Added {item} to container {container_id}"})
+    return f"Added {item} to container {container_id}"
 
-@app.route('/remove_item', methods=['POST'])
-def remove_item():
-    data = request.json
-    container_id = data.get('container_id')
-    item = data.get('item')
-    
-    if not container_id or not item:
-        return json.dumps({"error": "Missing container_id or item"}), 400
-    
+@mcp.tool
+def remove_item(container_id: str, item: str):
+    """Remove an item from a container."""
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     
@@ -93,7 +67,7 @@ def remove_item():
     
     if not result:
         conn.close()
-        return json.dumps({"error": f"Container {container_id} not found"}), 404
+        return f"Container {container_id} not found"
     
     contents = result[0]
     items = contents.split(",")
@@ -104,21 +78,14 @@ def remove_item():
         cursor.execute("UPDATE belongings SET contents = ? WHERE id = ?", (new_contents, container_id))
         conn.commit()
         conn.close()
-        return json.dumps({"message": f"Removed {item} from container {container_id}"})
+        return f"Removed {item} from container {container_id}"
     else:
         conn.close()
-        return json.dumps({"error": f"Item {item} not found in container {container_id}"}), 404
+        return f"Item {item} not found in container {container_id}"
 
-@app.route('/move_item', methods=['POST'])
-def move_item():
-    data = request.json
-    from_container_id = data.get('from_container_id')
-    to_container_id = data.get('to_container_id')
-    item = data.get('item')
-    
-    if not from_container_id or not to_container_id or not item:
-        return json.dumps({"error": "Missing from_container_id, to_container_id, or item"}), 400
-    
+@mcp.tool
+def move_item(from_container_id: str, to_container_id: str, item: str):
+    """Move an item from one container to another."""
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     
@@ -128,14 +95,14 @@ def move_item():
     
     if not result:
         conn.close()
-        return json.dumps({"error": f"Container {from_container_id} not found"}), 404
+        return f"Container {from_container_id} not found"
     
     contents = result[0]
     items = contents.split(",")
     
     if item not in items:
         conn.close()
-        return json.dumps({"error": f"Item {item} not found in container {from_container_id}"}), 404
+        return f"Item {item} not found in container {from_container_id}"
     
     # Remove from source container
     items.remove(item)
@@ -158,15 +125,11 @@ def move_item():
     
     conn.commit()
     conn.close()
-    return json.dumps({"message": f"Moved {item} from {from_container_id} to {to_container_id}"})
+    return f"Moved {item} from {from_container_id} to {to_container_id}"
 
-@app.route('/search_item', methods=['GET'])
-def search_item():
-    item = request.args.get('item')
-    
-    if not item:
-        return json.dumps({"error": "Missing item parameter"}), 400
-    
+@mcp.tool
+def search_item(item: str):
+    """Search for an item across all containers."""
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     
@@ -181,12 +144,13 @@ def search_item():
     conn.close()
     
     if found_in:
-        return json.dumps({"message": f"Item {item} found in containers", "containers": found_in})
+        return f"Item {item} found in containers: {', '.join(found_in)}"
     else:
-        return json.dumps({"message": f"Item {item} not found in any container"})
+        return f"Item {item} not found in any container"
 
-@app.route('/get_all_items', methods=['GET'])
+@mcp.tool
 def get_all_items():
+    """Get all items from all containers for LLM processing."""
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     
@@ -195,34 +159,28 @@ def get_all_items():
     
     all_items = []
     for container_id, location, container_name, contents in results:
-        container = {
-            "id": container_id,
-            "location": location,
-            "name": container_name,
-            "contents": contents.split(",") if contents else []
-        }
-        all_items.append(container)
+        if contents:
+            container_info = f"Container ID: {container_id}"
+            if location:
+                container_info += f", Location: {location}"
+            if container_name:
+                container_info += f", Name: {container_name}"
+            container_info += f" contains: {contents}"
+            all_items.append(container_info)
     
     conn.close()
-    return json.dumps({"containers": all_items})
+    return "\n".join(all_items)
 
-@app.route('/update_container_info', methods=['POST'])
-def update_container_info():
-    data = request.json
-    container_id = data.get('container_id')
-    location = data.get('location')
-    container_name = data.get('container_name')
-    
-    if not container_id:
-        return json.dumps({"error": "Missing container_id"}), 400
-    
+@mcp.tool
+def update_container_info(container_id: str, location: str = None, container_name: str = None):
+    """Update container location or name."""
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     
     cursor.execute("SELECT id FROM belongings WHERE id = ?", (container_id,))
     if not cursor.fetchone():
         conn.close()
-        return json.dumps({"error": f"Container {container_id} not found"}), 404
+        return f"Container {container_id} not found"
     
     updates = []
     params = []
@@ -241,10 +199,10 @@ def update_container_info():
         cursor.execute(query, params)
         conn.commit()
         conn.close()
-        return json.dumps({"message": f"Updated container {container_id} information"})
+        return f"Updated container {container_id} information"
     else:
         conn.close()
-        return json.dumps({"error": "No updates provided"}), 400
+        return "No updates provided"
 
 if __name__ == "__main__":
-    app.run(debug=True, port=5000)
+    mcp.run()
