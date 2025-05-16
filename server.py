@@ -38,7 +38,7 @@ def init_db():
 init_db()
 
 
-@mcp.tool
+@mcp.tool()
 def add_item(container_id: str, item: str):
     """Add an item to a container. If the container doesn't exist, create it."""
     conn = sqlite3.connect(DB_PATH)
@@ -68,7 +68,7 @@ def add_item(container_id: str, item: str):
     return f"Added {item} to container {container_id}"
 
 
-@mcp.tool
+@mcp.tool()
 def remove_item(container_id: str, item: str):
     """Remove an item from a container."""
     conn = sqlite3.connect(DB_PATH)
@@ -99,7 +99,7 @@ def remove_item(container_id: str, item: str):
         return f"Item {item} not found in container {container_id}"
 
 
-@mcp.tool
+@mcp.tool()
 def move_item(from_container_id: str, to_container_id: str, item: str):
     """Move an item from one container to another."""
     conn = sqlite3.connect(DB_PATH)
@@ -153,7 +153,7 @@ def move_item(from_container_id: str, to_container_id: str, item: str):
     return f"Moved {item} from {from_container_id} to {to_container_id}"
 
 
-@mcp.tool
+@mcp.tool()
 def search_item(item: str):
     """Search for an item across all containers."""
     conn = sqlite3.connect(DB_PATH)
@@ -175,7 +175,7 @@ def search_item(item: str):
         return f"Item {item} not found in any container"
 
 
-@mcp.tool
+@mcp.tool()
 def get_all_items():
     """Get all items from all containers for LLM processing."""
     conn = sqlite3.connect(DB_PATH)
@@ -199,7 +199,7 @@ def get_all_items():
     return "\n".join(all_items)
 
 
-@mcp.tool
+@mcp.tool()
 def update_container_info(
     container_id: str, location: str = None, container_name: str = None
 ):
