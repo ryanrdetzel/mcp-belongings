@@ -235,5 +235,36 @@ def update_container_info(
         return "No updates provided"
 
 
+@mcp.tool()
+def get_container_contents(container_id: str):
+    """Get all items from a specific container."""
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    
+    cursor.execute("SELECT id, location, container_name, contents FROM belongings WHERE id = ?", (container_id,))
+    result = cursor.fetchone()
+    
+    if not result:
+        conn.close()
+        return f"Container {container_id} not found"
+    
+    container_id, location, container_name, contents = result
+    
+    container_info = f"Container ID: {container_id}"
+    if location:
+        container_info += f", Location: {location}"
+    if container_name:
+        container_info += f", Name: {container_name}"
+    
+    if contents:
+        items = contents.split(",")
+        container_info += f"\nContains {len(items)} items: {contents}"
+    else:
+        container_info += "\nContainer is empty"
+    
+    conn.close()
+    return container_info
+
+
 if __name__ == "__main__":
     mcp.run(transport="sse", host="0.0.0.0", port=8002)
